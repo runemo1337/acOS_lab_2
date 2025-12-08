@@ -2,7 +2,7 @@ import socket
 import time
 
 
-class Server_company_name:
+class Server_COMPANY_NAME:
     def __init__(self):
         self.current_state = 'Waiting_request'
         self.socket = None
@@ -11,8 +11,9 @@ class Server_company_name:
         self.current_request = None
         self.answer_data = None
         self.process = True
+        self.decoder='utf-8'
 
-    def start_server(self,
+    def start_work_process(self,
                      adress_family=socket.AF_INET,socket_type=socket.SOCK_STREAM,
                      socket_option=socket.SOL_SOCKET, again_usage=True, is_turn_on=1,
                      host='localhost',port=12345,
@@ -49,12 +50,12 @@ class Server_company_name:
         elif self.current_state == 'send_answer':
             self.send_answer()
         elif self.current_state == 'catch_error':
-            self.handle_error()
+            self.editing_error()
 
     def func_waiting_request(self,
-                             time_to_write_request=5.0,
-                             max_length_request=1488,decoder='utf-8',
-                             exception_data=['','sql','c++']):
+                             time_to_write_request=10.0,
+                             max_length_request=1488
+                             ):
 
         if not self.client_socket:
             try:
@@ -63,10 +64,14 @@ class Server_company_name:
                 print(f" Подключен: {self.client_address}")
             except socket.timeout:
                 return
+            except Exception as e:
+                print(f" Ошибка  при поключении: {e}")
+                self.current_state = 'catch_error'
 
         try:
-            request_from_client = self.client_socket.recv(max_length_request).decode(decoder)
-            if request_from_client not in exception_data:
+            request_from_client = self.client_socket.recv(max_length_request).decode(self.decoder)
+
+            if request_from_client.strip().lower()!='':
                 self.current_request = request_from_client.strip().lower()
                 print(f"Получен запрос: '{self.current_request}'")
                 self.current_state = 'process_editing'
@@ -75,7 +80,9 @@ class Server_company_name:
                 self.client_socket.close()
                 self.client_socket = None
         except socket.timeout:
-            return
+            if self.client_socket:
+                self.client_socket.close()
+                self.client_socket = None
         except Exception as e:
             print(f" Ошибка олучения данных: {e}")
             self.current_state = 'catch_error'
@@ -97,11 +104,45 @@ class Server_company_name:
 
                 self.answer_data = f"{self.current_request}"
 
-            
+
 
 
         except Exception as e:
-            print(f"❌ Ошибка обработки: {e}")
+            print(f"Ошибка обработки: {e}")
             self.answer_data = "Ошибка 501"
         print(f"{self.answer_data}")
         self.current_state = 'send_answer'
+
+    def send_answer(self):
+
+        try:
+            if self.client_socket:
+                self.client_socket.sendall(self.answer_data.encode(self.decoder))
+
+            self.current_state = 'Waiting_request'
+        except Exception as e:
+            print(f" Ошибка отправки: {e}")
+            self.current_state = 'catch_error'
+
+    def editing_error(self):
+
+        print("Возникла ошибка идет обработка...")
+        if self.client_socket:
+            self.client_socket.close()
+            self.client_socket = None
+        self.current_state = 'Waiting_request'
+        print("Обработка прошла успешно!!!!!!!!:))))))")
+
+    def cleanup(self):
+
+
+        if self.client_socket:
+            self.client_socket.close()
+        if self.socket:
+            self.socket.close()
+
+
+
+if __name__ == "__main__":
+    server = Server_COMPANY_NAME()
+    server.start_work_process()
