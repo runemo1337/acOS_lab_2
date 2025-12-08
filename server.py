@@ -4,7 +4,7 @@ import time
 
 class Server_COMPANY_NAME:
     def __init__(self):
-        self.current_state = 'Waiting_request'
+        self.current_state = 'waiting_request'
         self.socket = None
         self.client_socket = None
         self.client_address = None
@@ -43,7 +43,7 @@ class Server_COMPANY_NAME:
 
     def run_state_machine(self):
 
-        if self.current_state == 'Waiting_request':
+        if self.current_state == 'waiting_request':
             self.func_waiting_request()
         elif self.current_state == 'process_editing':
             self.editing_request()
@@ -119,7 +119,7 @@ class Server_COMPANY_NAME:
             if self.client_socket:
                 self.client_socket.sendall(self.answer_data.encode(self.decoder))
 
-            self.current_state = 'Waiting_request'
+            self.current_state = 'waiting_request'
         except Exception as e:
             print(f" Ошибка отправки: {e}")
             self.current_state = 'catch_error'
@@ -130,7 +130,7 @@ class Server_COMPANY_NAME:
         if self.client_socket:
             self.client_socket.close()
             self.client_socket = None
-        self.current_state = 'Waiting_request'
+        self.current_state = 'waiting_request'
         print("Обработка прошла успешно!!!!!!!!:))))))")
 
     def cleanup(self):
