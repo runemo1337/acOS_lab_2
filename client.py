@@ -36,3 +36,33 @@ class ClientStateMachine:
         self.current_request = random.choice(requests)
         print(f"Отправляем: '{self.current_request}'")
         self.state = 'AWAIT_RESPONSE'
+
+    def await_response(self):
+        "Состояние 2: Ожидание ответа"
+        try:
+            self.socket.sendall(self.current_request.encode('utf-8'))
+            print("Запрос отправлен")
+            self.state = 'READ_RESPONSE'
+        except Exception as e:
+            print(f"Ошибка отправки: {e}")
+            self.state = 'ERROR_HANDLING'
+    
+    def read_response(self):
+        "Состояние 3: Чтение ответа"
+        try:
+            response = self.socket.recv(1024).decode('utf-8')
+            if response:
+                self.server_response = response
+                print(f"Получен ответ: '{self.server_response}'")
+                self.state = 'CREATE_REQUEST'
+                time.sleep(2)
+            else:
+                print("Сервер закрыл соединение")
+                self.state = 'ERROR_HANDLING'
+                
+        except socket.timeout:
+            print("Таймаут ожидания ответа")
+            self.state = 'ERROR_HANDLING'
+        except Exception as e:
+            print(f"Ошибка чтения: {e}")
+            self.state = 'ERROR_HANDLING'
