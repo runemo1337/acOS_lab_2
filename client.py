@@ -15,7 +15,7 @@ class ClientStateMachine:
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(10.0)
-            self.socket.connect(('localhost', 8888))
+            self.socket.connect(('localhost', 12345))
             print("Соединение с сервером установлено")
             return True
         except Exception as e:
