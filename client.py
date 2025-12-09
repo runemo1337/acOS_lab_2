@@ -109,6 +109,7 @@ def run(self):
             print(f" Неожиданная ошибка: {e}")
             self.state = 'ERROR_HANDLING'
 
+
 if __name__ == "__main__":
     client = ClientStateMachine()
     client.run()
