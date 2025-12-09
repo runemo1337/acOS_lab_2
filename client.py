@@ -24,17 +24,11 @@ class ClientStateMachine:
             return False
     
     def create_request(self):
-        "Состояние 1: Создание запроса"
-        requests = [
-            "Hello Server",
-            "Test message",
-            "Ping",
-            "Any data",
-            "Request from client"
-        ]
-        
-        self.current_request = random.choice(requests)
-        print(f"Отправляем: '{self.current_request}'")
+        self.current_request = input("Введите запрос для сервера: ").strip()
+        if self.current_request.lower() == 'exit':
+            print(" Завершение работы...")
+            self.work = False
+            return
         self.state = 'AWAIT_RESPONSE'
 
     def await_response(self):
