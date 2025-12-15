@@ -1,15 +1,15 @@
 import socket
-import time
 import threading
+import argparse
 
 
 class StateDescriptor:
-
     def __init__(self, allowed_states, initial_state):
         self._allowed = set(allowed_states)
         if initial_state not in self._allowed:
             raise ValueError("initial_state must be in allowed_states")
         self._initial = initial_state
+        self._private_name = None
 
     def __set_name__(self, owner, name):
         self._private_name = f"_{name}"
@@ -21,207 +21,92 @@ class StateDescriptor:
 
     def __set__(self, obj, value):
         if value not in self._allowed:
-            raise ValueError(f"Invalid state {value!r}. Allowed: {sorted(self._allowed)}")
+            raise ValueError(f"Invalid state {value!r}")
         setattr(obj, self._private_name, value)
 
 
-class Server_COMPANY_NAME:
+def process_request_text(text: str) -> str:
+    t = text.strip()
+    if t.lower() == "ping":
+        return "pong"
+    return "error"
 
-    current_state = StateDescriptor(
-        allowed_states={'waiting_request', 'process_editing', 'send_answer', 'catch_error'},
-        initial_state='waiting_request'
+
+class ConnectionSession:
+    state = StateDescriptor(
+        allowed_states={"WAIT", "PROCESS", "SEND", "CLOSE", "ERROR"},
+        initial_state="WAIT",
     )
 
-    def __init__(self):
-        self.current_state = 'waiting_request'
-        self.socket = None
-        self.client_socket = None
-        self.client_address = None
-        self.current_request = None
-        self.answer_data = None
-        self.process = True
-        self.decoder = 'utf-8'
-        self._client_threads = []
+    def __init__(self, conn: socket.socket, addr):
+        self.conn = conn
+        self.addr = addr
+        self.state = "WAIT"
+        self._last_response = ""
 
-
-    def process_request_text(self, request_text: str) -> str:
-        req = (request_text or "").strip().lower()
-        if req == "ping":
-            return "pong"
-        elif req == "what is up bro?":
-            return "Hello Client!"
-        elif req == "goodbye?":
-            return "bye:("
-        else:
-            return req
-
-    def _client_worker(self, client_socket, client_address,
-                       time_to_write_request=10.0, max_length_request=1488):
+    def run(self):
         try:
-            client_socket.settimeout(time_to_write_request)
-            print(f" Подключен: {client_address}")
+            while True:
+                self.state = "WAIT"
+                data = self.conn.recv(1024)
+                if not data:
+                    self.state = "CLOSE"
+                    break
 
-            while self.process:
-                try:
-                    data = client_socket.recv(max_length_request)
-                    if not data:
-                        break
+                self.state = "PROCESS"
+                text = data.decode("utf-8", errors="replace")
+                self._last_response = process_request_text(text)
 
-                    request = data.decode(self.decoder, errors='replace').strip()
-                    if request == "":
-                        continue
-
-                    answer = self.process_request_text(request)
-                    print(f"Получен запрос от {client_address}: '{request}' -> '{answer}'")
-                    client_socket.sendall(answer.encode(self.decoder))
-                except socket.timeout:
-                    continue
-        except Exception as e:
-            print(f" Client Error {client_address}: {e}")
+                self.state = "SEND"
+                self.conn.sendall(self._last_response.encode("utf-8"))
+        except Exception:
+            self.state = "ERROR"
         finally:
             try:
-                client_socket.close()
+                self.conn.close()
             except Exception:
                 pass
-            print(f" Отключен: {client_address}")
-
-    def start_work_process(self,
-                     adress_family=socket.AF_INET, socket_type=socket.SOCK_STREAM,
-                     socket_option=socket.SOL_SOCKET, again_usage=True, is_turn_on=1,
-                     host='localhost', port=12345,
-                     queue_size=1, server_timeout=5.0):
-
-        self.socket = socket.socket(adress_family, socket_type)
-        if again_usage:
-            self.socket.setsockopt(socket_option, socket.SO_REUSEADDR, is_turn_on)
-        self.socket.bind((host, port))
-        self.socket.listen(queue_size)
-        self.socket.settimeout(server_timeout)
-        print(f" Сервер запущен на {host}:{port} ")
-        print("Ожиданиe.........")
-
-        while self.process:
-            try:
-                try:
-                    client_socket, client_address = self.socket.accept()
-                except socket.timeout:
-                    continue
 
 
-                th = threading.Thread(
-                    target=self._client_worker,
-                    args=(client_socket, client_address),
-                    daemon=True
-                )
-                th.start()
-                self._client_threads.append(th)
+class Server:
+    def __init__(self, host="0.0.0.0", port=12345, backlog=128):
+        self.host = host
+        self.port = int(port)
+        self.backlog = int(backlog)
+        self._sock = None
 
-            except KeyboardInterrupt:
-                print("\n Стоп")
-                self.process = False
-                break
-            except Exception as e:
-                print(f" Server Error: {e}")
-                self.current_state = 'catch_error'
-
-        self.cleanup()
-
-
-
-    def run_state_machine(self):
-
-        if self.current_state == 'waiting_request':
-            self.func_waiting_request()
-        elif self.current_state == 'process_editing':
-            self.editing_request()
-        elif self.current_state == 'send_answer':
-            self.send_answer()
-        elif self.current_state == 'catch_error':
-            self.editing_error()
-
-    def func_waiting_request(self,
-                             time_to_write_request=10.0,
-                             max_length_request=1488
-                             ):
-
-        if not self.client_socket:
-            try:
-                self.client_socket, self.client_address = self.socket.accept()
-                self.client_socket.settimeout(time_to_write_request)
-                print(f" Подключен: {self.client_address}")
-            except socket.timeout:
-                return
-            except Exception as e:
-                print(f" Ошибка  при поключении: {e}")
-                self.current_state = 'catch_error'
+    def start(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((self.host, self.port))
+        s.listen(self.backlog)
+        self._sock = s
+        print(f"Сервер запущен на {self.host}:{self.port}")
 
         try:
-            request_from_client = self.client_socket.recv(max_length_request).decode(self.decoder)
-
-            if request_from_client.strip().lower() != '':
-                self.current_request = request_from_client.strip().lower()
-                print(f"Получен запрос: '{self.current_request}'")
-                self.current_state = 'process_editing'
-            else:
-                print(" Связь была разорвана")
-                self.client_socket.close()
-                self.client_socket = None
-        except socket.timeout:
-            if self.client_socket:
-                self.client_socket.close()
-                self.client_socket = None
-        except Exception as e:
-            print(f" Ошибка олучения данных: {e}")
-            self.current_state = 'catch_error'
-
-    def editing_request(self):
-
-        try:
-
-            self.answer_data = self.process_request_text(self.current_request)
-
-        except Exception as e:
-            print(f"Ошибка обработки: {e}")
-            self.answer_data = "Ошибка 501"
-        print(f"{self.answer_data}")
-        self.current_state = 'send_answer'
-
-    def send_answer(self):
-
-        try:
-            if self.client_socket:
-                self.client_socket.sendall(self.answer_data.encode(self.decoder))
-
-            self.current_state = 'waiting_request'
-        except Exception as e:
-            print(f" Ошибка отправки: {e}")
-            self.current_state = 'catch_error'
-
-    def editing_error(self):
-
-        print("Возникла ошибка идет обработка...")
-        if self.client_socket:
-            self.client_socket.close()
-            self.client_socket = None
-        self.current_state = 'waiting_request'
-        print("Обработка прошла успешно!!!!!!!!:))))))")
-
-    def cleanup(self):
-
-        try:
-            if self.socket:
-                self.socket.close()
-        except Exception:
+            while True:
+                conn, addr = s.accept()
+                t = threading.Thread(target=ConnectionSession(conn, addr).run, daemon=True)
+                t.start()
+        except KeyboardInterrupt:
             pass
-        self.socket = None
-
-        for th in self._client_threads:
+        finally:
             try:
-                th.join(timeout=0.2)
+                s.close()
             except Exception:
                 pass
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("port", nargs="?", type=int, default=12345)
+    p.add_argument("--port", dest="port_opt", type=int, default=None)
+    p.add_argument("--host", dest="host", default="0.0.0.0")
+    args = p.parse_args()
+    port = args.port_opt if args.port_opt is not None else args.port
+    return args.host, port
 
 
 if __name__ == "__main__":
-    server = Server_COMPANY_NAME()
-    server.start_work_process()
+    host, port = parse_args()
+    Server(host=host, port=port).start()
